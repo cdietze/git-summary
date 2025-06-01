@@ -1,35 +1,35 @@
-use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::collections::BTreeMap;
 use walkdir::WalkDir;
 use chrono::{NaiveDate, Datelike};
 
+mod cli;
+use cli::Cli;
+use clap::Parser;
+
 fn main() {
-    let base_dir = env::var("BASE_DIR")
-        .unwrap_or_else(|_| {
-            env::var("HOME")
-                .map(|home| format!("{}/code", home))
-                .unwrap_or_else(|_| ".".to_string())
-        });
-    
-    let since = "1 week ago";
-    let author = get_git_user_name().unwrap_or_else(|| "unknown".to_string());
-    
+    let cli = Cli::parse();
+    let base_dir = &cli.dir;
+
+    println!("🔍 Recursively searching for Git repositories under: {}", std::fs::canonicalize(base_dir)
+        .unwrap_or_else(|_| base_dir.to_path_buf()).display());
+
+    let since = &cli.since;
+    let author = cli.author.clone().unwrap_or_else(|| get_git_user_name().unwrap_or_else(|| "unknown".to_string()));
+
     println!("📅 Showing commits since: {}", since);
-    
-    let base_path = Path::new(&base_dir);
-    println!("🔍 Recursively searching for Git repositories under: {}", base_path.display());
-    
-    let repos = find_git_repos(base_path);
-    println!("📦 Found {} Git {}", repos.len(), 
+    println!("👤 Filtering commits by author: {}", author);
+
+    let repos = find_git_repos(base_dir, cli.max_depth);
+    println!("📦 Found {} Git {}", repos.len(),
     if repos.len() == 1 { "repository" } else { "repositories" });
 
     if repos.is_empty() {
         println!("⚠️ No Git repositories found.");
     } else {
         let mut commits_by_date: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-        
+
         for repo in repos {
             if !has_commits(&repo) {
                 continue;
@@ -42,13 +42,13 @@ fn main() {
                     .push((repo.display().to_string(), message));
             }
         }
-        
+
         for (date, commits) in commits_by_date.iter().rev() {
             println!("--------------------------------------------------");
             println!("📅 {}", date);
             for (repo, message) in commits {
-                println!("📁 {} - {}", 
-                    repo.split('/').last().unwrap_or(repo), 
+                println!("📁 {} - {}",
+                    repo.split('/').last().unwrap_or(repo),
                     message);
             }
         }
@@ -72,11 +72,11 @@ fn has_commits(repo_dir: &Path) -> bool {
 fn run_command(command: &[&str], working_dir: Option<&Path>) -> Option<String> {
     let mut cmd = Command::new(command[0]);
     cmd.args(&command[1..]);
-    
+
     if let Some(dir) = working_dir {
         cmd.current_dir(dir);
     }
-    
+
     match cmd.output() {
         Ok(output) => {
             if output.status.success() {
@@ -102,7 +102,7 @@ fn get_commits(repo_dir: &Path, since: &str, author: &str) -> Vec<(String, Strin
         "--pretty=format:%ad|%s",
         "--date=short"
     ];
-    
+
     if let Some(output) = run_command(&args, Some(repo_dir)) {
         output.lines()
             .filter_map(|line| {
@@ -132,15 +132,14 @@ fn get_commits(repo_dir: &Path, since: &str, author: &str) -> Vec<(String, Strin
     }
 }
 
-fn find_git_repos(base_dir: &Path) -> Vec<PathBuf> {
+fn find_git_repos(base_dir: &Path, max_depth: usize) -> Vec<PathBuf> {
     const IGNORED_DIRS: &[&str] = &["node_modules", "build", "out", "target", "dist", "coverage", "src"];
-    const MAX_DEPTH: usize = 8; // Typical project structure depth
 
     let mut repos = Vec::with_capacity(1000);
 
     WalkDir::new(base_dir)
         .follow_links(false)
-        .max_depth(MAX_DEPTH)
+        .max_depth(max_depth)
         .into_iter()
         .filter_entry(|entry| {
             let path = entry.path();
