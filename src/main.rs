@@ -1,5 +1,4 @@
 use std::env;
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use walkdir::WalkDir;
@@ -95,53 +94,35 @@ fn run_git_log(repo_dir: &Path, since: &str, author: &str) -> Option<String> {
     run_command(&args, Some(repo_dir))
 }
 
-
 fn find_git_repos(base_dir: &Path) -> Vec<PathBuf> {
     const IGNORED_DIRS: &[&str] = &["node_modules", "build", "out", "target", "dist", "coverage", "src"];
     const MAX_DEPTH: usize = 8; // Typische Projektstruktur-Tiefe
-    const GIT_DIR: &str = ".git";
 
-    // Für kleine Arrays ist lineares Suchen oft schneller als HashSet
-    let mut repos = Vec::with_capacity(100); // Geschätzte Anzahl Repositories
+    let mut repos = Vec::with_capacity(1000);
 
     WalkDir::new(base_dir)
         .follow_links(false)
         .max_depth(MAX_DEPTH)
         .into_iter()
-        .filter_entry(|entry| should_enter_directory_optimized(entry, IGNORED_DIRS))
-        .filter_map(|entry| {
-            let dir_entry = entry.ok()?;
-            let path = dir_entry.path();
+        .filter_entry(|entry| {
+            let path = entry.path();
+            let file_name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(name) => name,
+                None => return false,
+            };
 
-            // OsStr verwenden um String-Konvertierung zu vermeiden
-            if path.file_name() == Some(OsStr::new(GIT_DIR)) && path.is_dir() {
-                path.parent().map(PathBuf::from)
-            } else {
-                None
+            // Frühe Git-Repository-Erkennung
+            if file_name == ".git" && path.is_dir() {
+                if let Some(parent) = path.parent() {
+                    repos.push(parent.to_path_buf());
+                }
+                return false; // Nicht in .git Verzeichnis hineingehen
             }
+
+            // Normale Verzeichnis-Filterung
+            !file_name.starts_with('.') && !IGNORED_DIRS.contains(&file_name)
         })
-        .for_each(|repo| repos.push(repo));
+        .for_each(drop); // Iterator konsumieren, aber Ergebnisse ignorieren
 
-    repos.shrink_to_fit(); // Unnötigen Speicher freigeben
     repos
-}
-
-fn should_enter_directory_optimized(entry: &walkdir::DirEntry, ignored_dirs: &[&str]) -> bool {
-    let file_name = match entry.file_name().to_str() {
-        Some(name) => name,
-        None => return false, // Nicht-UTF8 Namen überspringen
-    };
-
-    // .git Verzeichnisse betreten
-    if file_name == ".git" {
-        return true;
-    }
-
-    // Versteckte Verzeichnisse überspringen (außer .git)
-    if file_name.starts_with('.') {
-        return false;
-    }
-
-    // Für kleine Arrays ist lineares Suchen schneller als HashSet
-    !ignored_dirs.contains(&file_name)
 }
