@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[command(author, version, about, long_about = None)]
 pub(crate) struct Cli {
     /// Base directory to search for git repositories
-    #[arg(short, long, value_name = "DIR", default_value = ".")]
+    #[arg(default_value = ".")]
     pub(crate) dir: PathBuf,
 
     /// Time range for commits (e.g. "1 week ago")
