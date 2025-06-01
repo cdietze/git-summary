@@ -22,7 +22,8 @@ fn main() {
     println!("🔍 Recursively searching for Git repositories under: {}", base_path.display());
     
     let repos = find_git_repos(base_path);
-    println!("📦 Found {} Git repositor(y/ies).", repos.len());
+    println!("📦 Found {} Git {}", repos.len(), 
+    if repos.len() == 1 { "repository" } else { "repositories" });
 
     if repos.is_empty() {
         println!("⚠️ No Git repositories found.");
