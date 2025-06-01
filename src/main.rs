@@ -174,7 +174,7 @@ fn find_git_repos(base_dir: &Path, max_depth: usize) -> Vec<PathBuf> {
                 None => return false,
             };
 
-            // Early Git repository detection
+            // Git repository detection
             if file_name == ".git" && path.is_dir() {
                 if let Some(parent) = path.parent() {
                     repos.push(parent.to_path_buf());
