@@ -1,29 +1,43 @@
+use chrono::{Datelike, NaiveDate};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::collections::BTreeMap;
 use walkdir::WalkDir;
-use chrono::{NaiveDate, Datelike};
 
 mod cli;
-use cli::Cli;
 use clap::Parser;
+use cli::Cli;
 
 fn main() {
     let cli = Cli::parse();
     let base_dir = &cli.dir;
 
-    println!("🔍 Recursively searching for Git repositories under: {}", std::fs::canonicalize(base_dir)
-        .unwrap_or_else(|_| base_dir.to_path_buf()).display());
+    println!(
+        "🔍 Recursively searching for Git repositories under: {}",
+        std::fs::canonicalize(base_dir)
+            .unwrap_or_else(|_| base_dir.to_path_buf())
+            .display()
+    );
 
     let since = &cli.since;
-    let author = cli.author.clone().unwrap_or_else(|| get_git_user_name().unwrap_or_else(|| "unknown".to_string()));
+    let author = cli
+        .author
+        .clone()
+        .unwrap_or_else(|| get_git_user_name().unwrap_or_else(|| "unknown".to_string()));
 
     println!("📅 Showing commits since: {}", since);
     println!("👤 Filtering commits by author: {}", author);
 
     let repos = find_git_repos(base_dir, cli.max_depth);
-    println!("📦 Found {} Git {}", repos.len(),
-    if repos.len() == 1 { "repository" } else { "repositories" });
+    println!(
+        "📦 Found {} Git {}",
+        repos.len(),
+        if repos.len() == 1 {
+            "repository"
+        } else {
+            "repositories"
+        }
+    );
 
     if repos.is_empty() {
         println!("⚠️ No Git repositories found.");
@@ -37,7 +51,8 @@ fn main() {
 
             let commits = get_commits(&repo, since, &author);
             for (date, message) in commits {
-                commits_by_date.entry(date)
+                commits_by_date
+                    .entry(date)
                     .or_insert_with(Vec::new)
                     .push((repo.display().to_string(), message));
             }
@@ -47,17 +62,18 @@ fn main() {
             println!("--------------------------------------------------");
             println!("📅 {}", date);
             for (repo, message) in commits {
-                println!("📁 {} - {}",
+                println!(
+                    "📁 {} - {}",
                     repo.split('/').last().unwrap_or(repo),
-                    message);
+                    message
+                );
             }
         }
     }
 }
 
 fn get_git_user_name() -> Option<String> {
-    run_command(&["git", "config", "user.name"], None)
-        .map(|s| s.trim().to_string())
+    run_command(&["git", "config", "user.name"], None).map(|s| s.trim().to_string())
 }
 
 fn has_commits(repo_dir: &Path) -> bool {
@@ -96,15 +112,17 @@ fn run_command(command: &[&str], working_dir: Option<&Path>) -> Option<String> {
 
 fn get_commits(repo_dir: &Path, since: &str, author: &str) -> Vec<(String, String)> {
     let args = [
-        "git", "log",
+        "git",
+        "log",
         &format!("--since={}", since),
         &format!("--author={}", author),
         "--pretty=format:%ad|%s",
-        "--date=short"
+        "--date=short",
     ];
 
     if let Some(output) = run_command(&args, Some(repo_dir)) {
-        output.lines()
+        output
+            .lines()
             .filter_map(|line| {
                 let parts: Vec<&str> = line.splitn(2, '|').collect();
                 if parts.len() == 2 {
@@ -133,7 +151,15 @@ fn get_commits(repo_dir: &Path, since: &str, author: &str) -> Vec<(String, Strin
 }
 
 fn find_git_repos(base_dir: &Path, max_depth: usize) -> Vec<PathBuf> {
-    const IGNORED_DIRS: &[&str] = &["node_modules", "build", "out", "target", "dist", "coverage", "src"];
+    const IGNORED_DIRS: &[&str] = &[
+        "node_modules",
+        "build",
+        "out",
+        "target",
+        "dist",
+        "coverage",
+        "src",
+    ];
 
     let mut repos = Vec::with_capacity(1000);
 
