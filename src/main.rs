@@ -1,14 +1,14 @@
 use std::env;
-use std::fs;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::collections::HashSet;
+use walkdir::WalkDir;
 
 fn main() {
     let base_dir = env::var("BASE_DIR")
         .unwrap_or_else(|_| {
             env::var("HOME")
-                .map(|home| format!("{}/code/cpd", home))
+                .map(|home| format!("{}/code", home))
                 .unwrap_or_else(|_| ".".to_string())
         });
     
@@ -95,40 +95,53 @@ fn run_git_log(repo_dir: &Path, since: &str, author: &str) -> Option<String> {
     run_command(&args, Some(repo_dir))
 }
 
-use walkdir::WalkDir;
 
 fn find_git_repos(base_dir: &Path) -> Vec<PathBuf> {
-    const IGNORED_DIRS: &[&str] = &["node_modules", "build", "out", "target", ".idea", ".vscode"];
+    const IGNORED_DIRS: &[&str] = &["node_modules", "build", "out", "target", "dist", "coverage", "src"];
+    const MAX_DEPTH: usize = 8; // Typische Projektstruktur-Tiefe
+    const GIT_DIR: &str = ".git";
 
-    let ignored_dirs: HashSet<&str> = IGNORED_DIRS.iter().cloned().collect();
+    // Für kleine Arrays ist lineares Suchen oft schneller als HashSet
+    let mut repos = Vec::with_capacity(100); // Geschätzte Anzahl Repositories
 
     WalkDir::new(base_dir)
         .follow_links(false)
-        .max_depth(10) // Tiefenbegrenzung hinzufügen
+        .max_depth(MAX_DEPTH)
         .into_iter()
-        .filter_entry(|entry| should_enter_directory(entry, &ignored_dirs))
+        .filter_entry(|entry| should_enter_directory_optimized(entry, IGNORED_DIRS))
         .filter_map(|entry| {
-            match entry {
-                Ok(dir_entry) => {
-                    let path = dir_entry.path();
-                    if path.file_name().and_then(|n| n.to_str()) == Some(".git") && path.is_dir() {
-                        path.parent().map(|p| p.to_path_buf())
-                    } else {
-                        None
-                    }
-                }
-                Err(_) => None,
+            let dir_entry = entry.ok()?;
+            let path = dir_entry.path();
+
+            // OsStr verwenden um String-Konvertierung zu vermeiden
+            if path.file_name() == Some(OsStr::new(GIT_DIR)) && path.is_dir() {
+                path.parent().map(PathBuf::from)
+            } else {
+                None
             }
         })
-        .collect()
+        .for_each(|repo| repos.push(repo));
+
+    repos.shrink_to_fit(); // Unnötigen Speicher freigeben
+    repos
 }
 
-fn should_enter_directory(entry: &walkdir::DirEntry, ignored_dirs: &HashSet<&str>) -> bool {
-    let file_name = entry.file_name().to_str().unwrap_or("");
+fn should_enter_directory_optimized(entry: &walkdir::DirEntry, ignored_dirs: &[&str]) -> bool {
+    let file_name = match entry.file_name().to_str() {
+        Some(name) => name,
+        None => return false, // Nicht-UTF8 Namen überspringen
+    };
 
+    // .git Verzeichnisse betreten
     if file_name == ".git" {
         return true;
     }
 
-    !file_name.starts_with('.') && !ignored_dirs.contains(file_name)
+    // Versteckte Verzeichnisse überspringen (außer .git)
+    if file_name.starts_with('.') {
+        return false;
+    }
+
+    // Für kleine Arrays ist lineares Suchen schneller als HashSet
+    !ignored_dirs.contains(&file_name)
 }
