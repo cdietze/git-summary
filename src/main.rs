@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::collections::BTreeMap;
 use walkdir::WalkDir;
+use chrono::{NaiveDate, Datelike};
 
 fn main() {
     let base_dir = env::var("BASE_DIR")
@@ -15,16 +16,16 @@ fn main() {
     let since = "1 week ago";
     let author = get_git_user_name().unwrap_or_else(|| "unknown".to_string());
     
-    println!("📅 Zeige Commits seit: {}", since);
+    println!("📅 Showing commits since: {}", since);
     
     let base_path = Path::new(&base_dir);
-    println!("🔍 Suche rekursiv nach Git-Repositories unter: {}", base_path.display());
+    println!("🔍 Recursively searching for Git repositories under: {}", base_path.display());
     
     let repos = find_git_repos(base_path);
-    println!("📦 Habe {} Git-Repository(s) gefunden.", repos.len());
+    println!("📦 Found {} Git repositor(y/ies).", repos.len());
 
     if repos.is_empty() {
-        println!("⚠️ Keine Git-Repositories gefunden.");
+        println!("⚠️ No Git repositories found.");
     } else {
         let mut commits_by_date: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
         
@@ -81,12 +82,12 @@ fn run_command(command: &[&str], working_dir: Option<&Path>) -> Option<String> {
                 Some(String::from_utf8_lossy(&output.stdout).to_string())
             } else {
                 let error = String::from_utf8_lossy(&output.stderr);
-                println!("⚠️ Fehler beim Ausführen von '{}': {}", command.join(" "), error);
+                println!("⚠️ Error executing '{}': {}", command.join(" "), error);
                 None
             }
         }
         Err(e) => {
-            println!("⚠️ Ausnahme aufgetreten: {}", e);
+            println!("⚠️ Exception occurred: {}", e);
             None
         }
     }
@@ -106,7 +107,20 @@ fn get_commits(repo_dir: &Path, since: &str, author: &str) -> Vec<(String, Strin
             .filter_map(|line| {
                 let parts: Vec<&str> = line.splitn(2, '|').collect();
                 if parts.len() == 2 {
-                    Some((parts[0].to_string(), parts[1].to_string()))
+                    if let Ok(date) = NaiveDate::parse_from_str(parts[0], "%Y-%m-%d") {
+                        let weekday = match date.weekday() {
+                            chrono::Weekday::Mon => "Monday",
+                            chrono::Weekday::Tue => "Tuesday",
+                            chrono::Weekday::Wed => "Wednesday",
+                            chrono::Weekday::Thu => "Thursday",
+                            chrono::Weekday::Fri => "Friday",
+                            chrono::Weekday::Sat => "Saturday",
+                            chrono::Weekday::Sun => "Sunday",
+                        };
+                        Some((format!("{} ({})", parts[0], weekday), parts[1].to_string()))
+                    } else {
+                        Some((parts[0].to_string(), parts[1].to_string()))
+                    }
                 } else {
                     None
                 }
@@ -119,7 +133,7 @@ fn get_commits(repo_dir: &Path, since: &str, author: &str) -> Vec<(String, Strin
 
 fn find_git_repos(base_dir: &Path) -> Vec<PathBuf> {
     const IGNORED_DIRS: &[&str] = &["node_modules", "build", "out", "target", "dist", "coverage", "src"];
-    const MAX_DEPTH: usize = 8; // Typische Projektstruktur-Tiefe
+    const MAX_DEPTH: usize = 8; // Typical project structure depth
 
     let mut repos = Vec::with_capacity(1000);
 
@@ -134,18 +148,18 @@ fn find_git_repos(base_dir: &Path) -> Vec<PathBuf> {
                 None => return false,
             };
 
-            // Frühe Git-Repository-Erkennung
+            // Early Git repository detection
             if file_name == ".git" && path.is_dir() {
                 if let Some(parent) = path.parent() {
                     repos.push(parent.to_path_buf());
                 }
-                return false; // Nicht in .git Verzeichnis hineingehen
+                return false; // Don't descend into .git directory
             }
 
-            // Normale Verzeichnis-Filterung
+            // Normal directory filtering
             !file_name.starts_with('.') && !IGNORED_DIRS.contains(&file_name)
         })
-        .for_each(drop); // Iterator konsumieren, aber Ergebnisse ignorieren
+        .for_each(drop); // Consume iterator but ignore results
 
     repos
 }
