@@ -168,7 +168,14 @@ fn find_git_repos(base_dir: &Path, max_depth: usize) -> Vec<PathBuf> {
         .max_depth(max_depth)
         .into_iter()
         .filter_entry(|entry| {
+
             let path = entry.path();
+
+            // Always look at base directory
+            if path == base_dir {
+                return true;
+            }
+
             let file_name = match path.file_name().and_then(|n| n.to_str()) {
                 Some(name) => name,
                 None => return false,
