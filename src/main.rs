@@ -8,6 +8,15 @@ mod cli;
 use clap::Parser;
 use cli::Cli;
 
+/// Represents a commit with all its metadata
+#[derive(Debug, Clone)]
+struct Commit {
+    date: String,
+    time: String,
+    repo: String,
+    message: String,
+}
+
 fn main() {
     let cli = Cli::parse();
     let base_dir = &cli.dir;
@@ -42,7 +51,7 @@ fn main() {
     if repos.is_empty() {
         println!("⚠️ No Git repositories found.");
     } else {
-        let mut commits_by_date: BTreeMap<String, Vec<(String, String, String)>> = BTreeMap::new();
+        let mut commits_by_date: BTreeMap<String, Vec<Commit>> = BTreeMap::new();
 
         for repo in repos {
             if !has_commits(&repo) {
@@ -50,28 +59,29 @@ fn main() {
             }
 
             let commits = get_commits(&repo, since, &author);
-            for (date, time, message) in commits {
+            for mut commit in commits {
+                commit.repo = repo.display().to_string();
                 commits_by_date
-                    .entry(date)
-                    .or_insert_with(Vec::new)
-                    .push((repo.display().to_string(), time, message));
+                    .entry(commit.date.clone())
+                    .or_insert_with(|| Vec::new())
+                    .push(commit);
             }
         }
 
         for (_date, commits) in commits_by_date.iter_mut() {
             // Sort commits by time
-            commits.sort_by(|a, b| a.1.cmp(&b.1));
+            commits.sort_by(|a, b| a.time.cmp(&b.time));
         }
 
         for (date, commits) in commits_by_date.iter().rev() {
             println!("--------------------------------------------------");
             println!("📅 {}", date);
-            for (repo, time, message) in commits {
+            for commit in commits {
                 println!(
                     "{} - {} - {}",
-                    time,
-                    repo.split('/').last().unwrap_or(repo),
-                    message
+                    commit.time,
+                    commit.repo.split('/').last().unwrap_or(&commit.repo),
+                    commit.message
                 );
             }
         }
@@ -116,7 +126,7 @@ fn run_command(command: &[&str], working_dir: Option<&Path>) -> Option<String> {
     }
 }
 
-fn get_commits(repo_dir: &Path, since: &str, author: &str) -> Vec<(String, String, String)> {
+fn get_commits(repo_dir: &Path, since: &str, author: &str) -> Vec<Commit> {
     let args = [
         "git",
         "log",
@@ -147,12 +157,27 @@ fn get_commits(repo_dir: &Path, since: &str, author: &str) -> Vec<(String, Strin
                                 chrono::Weekday::Sat => "Saturday",
                                 chrono::Weekday::Sun => "Sunday",
                             };
-                            Some((format!("{} ({})", date_str, weekday), time_str.to_string(), parts[2].to_string()))
+                            Some(Commit {
+                                date: format!("{} ({})", date_str, weekday),
+                                time: time_str.to_string(),
+                                repo: String::new(),
+                                message: parts[2].to_string(),
+                            })
                         } else {
-                            Some((date_str.to_string(), time_str.to_string(), parts[2].to_string()))
+                            Some(Commit {
+                                date: date_str.to_string(),
+                                time: time_str.to_string(),
+                                repo: String::new(),
+                                message: parts[2].to_string(),
+                            })
                         }
                     } else {
-                        Some((parts[0].to_string(), parts[1].to_string(), parts[2].to_string()))
+                        Some(Commit {
+                            date: parts[0].to_string(),
+                            time: parts[1].to_string(),
+                            repo: String::new(),
+                            message: parts[2].to_string(),
+                        })
                     }
                 } else {
                     None
