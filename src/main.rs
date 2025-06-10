@@ -42,7 +42,7 @@ fn main() {
     if repos.is_empty() {
         println!("⚠️ No Git repositories found.");
     } else {
-        let mut commits_by_date: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+        let mut commits_by_date: BTreeMap<String, Vec<(String, String, String)>> = BTreeMap::new();
 
         for repo in repos {
             if !has_commits(&repo) {
@@ -50,20 +50,26 @@ fn main() {
             }
 
             let commits = get_commits(&repo, since, &author);
-            for (date, message) in commits {
+            for (date, time, message) in commits {
                 commits_by_date
                     .entry(date)
                     .or_insert_with(Vec::new)
-                    .push((repo.display().to_string(), message));
+                    .push((repo.display().to_string(), time, message));
             }
+        }
+
+        for (_date, commits) in commits_by_date.iter_mut() {
+            // Sort commits by time
+            commits.sort_by(|a, b| a.1.cmp(&b.1));
         }
 
         for (date, commits) in commits_by_date.iter().rev() {
             println!("--------------------------------------------------");
             println!("📅 {}", date);
-            for (repo, message) in commits {
+            for (repo, time, message) in commits {
                 println!(
-                    "📁 {} - {}",
+                    "{} - {} - {}",
+                    time,
                     repo.split('/').last().unwrap_or(repo),
                     message
                 );
@@ -110,35 +116,43 @@ fn run_command(command: &[&str], working_dir: Option<&Path>) -> Option<String> {
     }
 }
 
-fn get_commits(repo_dir: &Path, since: &str, author: &str) -> Vec<(String, String)> {
+fn get_commits(repo_dir: &Path, since: &str, author: &str) -> Vec<(String, String, String)> {
     let args = [
         "git",
         "log",
         &format!("--since={}", since),
         &format!("--author={}", author),
-        "--pretty=format:%ad|%s",
-        "--date=short",
+        "--pretty=format:%ad|%H|%s",
+        "--date=format:%Y-%m-%d %H:%M",
     ];
 
     if let Some(output) = run_command(&args, Some(repo_dir)) {
         output
             .lines()
             .filter_map(|line| {
-                let parts: Vec<&str> = line.splitn(2, '|').collect();
-                if parts.len() == 2 {
-                    if let Ok(date) = NaiveDate::parse_from_str(parts[0], "%Y-%m-%d") {
-                        let weekday = match date.weekday() {
-                            chrono::Weekday::Mon => "Monday",
-                            chrono::Weekday::Tue => "Tuesday",
-                            chrono::Weekday::Wed => "Wednesday",
-                            chrono::Weekday::Thu => "Thursday",
-                            chrono::Weekday::Fri => "Friday",
-                            chrono::Weekday::Sat => "Saturday",
-                            chrono::Weekday::Sun => "Sunday",
-                        };
-                        Some((format!("{} ({})", parts[0], weekday), parts[1].to_string()))
+                let parts: Vec<&str> = line.splitn(3, '|').collect();
+                if parts.len() == 3 {
+                    let datetime_parts: Vec<&str> = parts[0].split_whitespace().collect();
+                    if datetime_parts.len() == 2 {
+                        let date_str = datetime_parts[0];
+                        let time_str = datetime_parts[1];
+
+                        if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                            let weekday = match date.weekday() {
+                                chrono::Weekday::Mon => "Monday",
+                                chrono::Weekday::Tue => "Tuesday",
+                                chrono::Weekday::Wed => "Wednesday",
+                                chrono::Weekday::Thu => "Thursday",
+                                chrono::Weekday::Fri => "Friday",
+                                chrono::Weekday::Sat => "Saturday",
+                                chrono::Weekday::Sun => "Sunday",
+                            };
+                            Some((format!("{} ({})", date_str, weekday), time_str.to_string(), parts[2].to_string()))
+                        } else {
+                            Some((date_str.to_string(), time_str.to_string(), parts[2].to_string()))
+                        }
                     } else {
-                        Some((parts[0].to_string(), parts[1].to_string()))
+                        Some((parts[0].to_string(), parts[1].to_string(), parts[2].to_string()))
                     }
                 } else {
                     None
