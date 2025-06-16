@@ -31,9 +31,14 @@ Features:
    cargo build --release
    ```
 
-3. The binary will be available at `target/release/git-summary`
+3. Run the project directly (for development):
+   ```
+   cargo run -- [OPTIONS]
+   ```
 
-4. Optionally, install it to your system:
+4. The binary will be available at `target/release/git-summary`
+
+5. Optionally, install it to your system:
    ```
    cargo install --path .
    ```
