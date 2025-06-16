@@ -73,7 +73,7 @@ fn main() {
             commits.sort_by(|a, b| a.time.cmp(&b.time));
         }
 
-        for (date, commits) in commits_by_date.iter().rev() {
+        for (date, commits) in commits_by_date.iter() {
             println!("--------------------------------------------------");
             println!("📅 {}", date);
             for commit in commits {
