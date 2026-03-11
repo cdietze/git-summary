@@ -40,7 +40,7 @@ Features:
 
 5. Optionally, install it to a custom prefix:
    ```
-   zig build -p ~/.local
+   zig build -Doptimize=ReleaseFast -p ~/.local
    ```
 
 ## Usage
