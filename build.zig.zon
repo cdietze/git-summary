@@ -1,0 +1,13 @@
+.{
+    .name = .git_summary,
+    .version = "0.1.0",
+    .fingerprint = 0x4d97d74381f5758c,
+    .minimum_zig_version = "0.15.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "LICENSE",
+    },
+}
