@@ -1,12 +1,6 @@
 const std = @import("std");
+const clap = @import("clap");
 const Allocator = std.mem.Allocator;
-
-const Config = struct {
-    dir: []const u8 = ".",
-    since: []const u8 = "1 week ago",
-    author: ?[]const u8 = null,
-    max_depth: usize = 8,
-};
 
 const Commit = struct {
     date: []const u8,
@@ -23,6 +17,15 @@ const weekday_names = [_][]const u8{
     "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 };
 
+const params = clap.parseParamsComptime(
+    \\-h, --help                 Display this help and exit.
+    \\-s, --since <str>          Time range for commits [default: 1 week ago]
+    \\-a, --author <str>         Author name (default: git config user.name)
+    \\-m, --max-depth <usize>    Max search depth [default: 8]
+    \\<str>
+    \\
+);
+
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
     defer _ = gpa.deinit();
@@ -31,25 +34,45 @@ pub fn main() !void {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const config = parseArgs();
+    var diag = clap.Diagnostic{};
+    var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
+        .diagnostic = &diag,
+        .allocator = arena,
+    }) catch |err| {
+        try diag.reportToFile(.stderr(), err);
+        return err;
+    };
+    defer res.deinit();
+
+    if (res.args.help != 0) {
+        var help_buf: [4096]u8 = undefined;
+        var help_w = std.fs.File.stderr().writer(&help_buf);
+        clap.help(&help_w.interface, clap.Help, &params, .{}) catch {};
+        help_w.interface.flush() catch {};
+        return;
+    }
+
+    const dir = res.positionals[0] orelse ".";
+    const since = res.args.since orelse "1 week ago";
+    const max_depth = res.args.@"max-depth" orelse 8;
 
     const out = std.fs.File.stdout();
     var buf: [4096]u8 = undefined;
     var stdout = out.writer(&buf);
     const w = &stdout.interface;
 
-    const real_path = std.fs.cwd().realpathAlloc(arena, config.dir) catch config.dir;
+    const real_path = std.fs.cwd().realpathAlloc(arena, dir) catch dir;
     try out.writeAll(try std.fmt.allocPrint(arena, "\xf0\x9f\x94\x8d Recursively searching for Git repositories under: {s}\n", .{real_path}));
 
-    const author: []const u8 = config.author orelse
+    const author: []const u8 = res.args.author orelse
         runGit(arena, null, &.{ "config", "user.name" }) catch "unknown";
 
-    try out.writeAll(try std.fmt.allocPrint(arena, "\xf0\x9f\x93\x85 Showing commits since: {s}\n", .{config.since}));
+    try out.writeAll(try std.fmt.allocPrint(arena, "\xf0\x9f\x93\x85 Showing commits since: {s}\n", .{since}));
     try out.writeAll(try std.fmt.allocPrint(arena, "\xf0\x9f\x91\xa4 Filtering commits by author: {s}\n", .{author}));
 
     var repos: std.ArrayList([]const u8) = .empty;
     defer repos.deinit(arena);
-    try findGitRepos(arena, config.dir, config.max_depth, 0, &repos);
+    try findGitRepos(arena, dir, max_depth, 0, &repos);
 
     const count = repos.items.len;
     try out.writeAll(try std.fmt.allocPrint(arena, "\xf0\x9f\x93\xa6 Found {} Git {s}\n", .{
@@ -66,7 +89,7 @@ pub fn main() !void {
     defer commits.deinit(arena);
     for (repos.items) |repo| {
         _ = runGit(arena, repo, &.{ "rev-parse", "HEAD" }) catch continue;
-        try collectCommits(arena, repo, config.since, author, &commits);
+        try collectCommits(arena, repo, since, author, &commits);
     }
 
     std.mem.sort(Commit, commits.items, {}, struct {
@@ -93,54 +116,6 @@ pub fn main() !void {
         });
     }
     try w.flush();
-}
-
-// --- Argument parsing ---
-
-fn parseArgs() Config {
-    var config = Config{};
-    var args = std.process.args();
-    _ = args.skip();
-
-    while (args.next()) |arg| {
-        if (eql(arg, "-s") or eql(arg, "--since")) {
-            config.since = args.next() orelse fatal("missing value for --since");
-        } else if (eql(arg, "-a") or eql(arg, "--author")) {
-            config.author = args.next() orelse fatal("missing value for --author");
-        } else if (eql(arg, "-m") or eql(arg, "--max-depth")) {
-            const val = args.next() orelse fatal("missing value for --max-depth");
-            config.max_depth = std.fmt.parseInt(usize, val, 10) catch fatal("invalid --max-depth");
-        } else if (eql(arg, "-h") or eql(arg, "--help")) {
-            printUsage();
-            std.process.exit(0);
-        } else if (!std.mem.startsWith(u8, arg, "-")) {
-            config.dir = arg;
-        } else {
-            std.debug.print("unknown option: {s}\n", .{arg});
-            std.process.exit(1);
-        }
-    }
-    return config;
-}
-
-fn printUsage() void {
-    var ubuf: [4096]u8 = undefined;
-    var stdout = std.fs.File.stdout().writer(&ubuf);
-    const w = &stdout.interface;
-    w.writeAll(
-        \\Usage: git-summary [OPTIONS] [DIR]
-        \\
-        \\Arguments:
-        \\  [DIR]  Base directory to search for git repositories [default: .]
-        \\
-        \\Options:
-        \\  -s, --since <SINCE>          Time range for commits [default: 1 week ago]
-        \\  -a, --author <AUTHOR>        Author name (default: git config user.name)
-        \\  -m, --max-depth <DEPTH>      Max search depth [default: 8]
-        \\  -h, --help                   Print help
-        \\
-    ) catch {};
-    w.flush() catch {};
 }
 
 // --- Git interaction ---
@@ -274,13 +249,3 @@ fn dayOfWeek(y: i32, m: u32, d: u32) usize {
     return @intCast(raw);
 }
 
-// --- Helpers ---
-
-fn eql(a: []const u8, b: []const u8) bool {
-    return std.mem.eql(u8, a, b);
-}
-
-fn fatal(msg: []const u8) noreturn {
-    std.debug.print("error: {s}\n", .{msg});
-    std.process.exit(1);
-}
