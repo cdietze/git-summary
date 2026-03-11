@@ -1,10 +1,14 @@
 const std = @import("std");
+const build_zon = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     const clap = b.dependency("clap", .{});
+
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", build_zon.version);
 
     const exe = b.addExecutable(.{
         .name = "git-summary",
@@ -14,6 +18,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "clap", .module = clap.module("clap") },
+                .{ .name = "config", .module = options.createModule() },
             },
         }),
     });
