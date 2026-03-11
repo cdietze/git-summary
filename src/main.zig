@@ -2,6 +2,8 @@ const std = @import("std");
 const clap = @import("clap");
 const Allocator = std.mem.Allocator;
 
+const version = @import("config").version;
+
 const Commit = struct {
     date: []const u8,
     time: []const u8,
@@ -19,6 +21,7 @@ const weekday_names = [_][]const u8{
 
 const params = clap.parseParamsComptime(
     \\-h, --help                 Display this help and exit.
+    \\-v, --version              Print version and exit.
     \\-s, --since <str>          Time range for commits [default: 1 week ago]
     \\-a, --author <str>         Author name (default: git config user.name)
     \\-m, --max-depth <usize>    Max search depth [default: 8]
@@ -52,6 +55,11 @@ pub fn main() !void {
         return;
     }
 
+    if (res.args.version != 0) {
+        try std.fs.File.stdout().writeAll("git-summary " ++ version ++ "\n");
+        return;
+    }
+
     const dir = res.positionals[0] orelse ".";
     const since = res.args.since orelse "1 week ago";
     const max_depth = res.args.@"max-depth" orelse 8;
@@ -71,7 +79,6 @@ pub fn main() !void {
     try out.writeAll(try std.fmt.allocPrint(arena, "\xf0\x9f\x91\xa4 Filtering commits by author: {s}\n", .{author}));
 
     var repos: std.ArrayList([]const u8) = .empty;
-    defer repos.deinit(arena);
     try findGitRepos(arena, dir, max_depth, 0, &repos);
 
     const count = repos.items.len;
@@ -85,11 +92,13 @@ pub fn main() !void {
         return;
     }
 
+    const since_arg = try std.fmt.allocPrint(arena, "--since={s}", .{since});
+    const author_arg = try std.fmt.allocPrint(arena, "--author={s}", .{author});
+
     var commits: std.ArrayList(Commit) = .empty;
-    defer commits.deinit(arena);
     for (repos.items) |repo| {
         _ = runGit(arena, repo, &.{ "rev-parse", "HEAD" }) catch continue;
-        try collectCommits(arena, repo, since, author, &commits);
+        try collectCommits(arena, repo, since_arg, author_arg, &commits);
     }
 
     std.mem.sort(Commit, commits.items, {}, struct {
@@ -121,19 +130,21 @@ pub fn main() !void {
 // --- Git interaction ---
 
 fn runGit(allocator: Allocator, repo: ?[]const u8, args: []const []const u8) ![]const u8 {
-    var argv: std.ArrayList([]const u8) = .empty;
-    defer argv.deinit(allocator);
+    const prefix_len: usize = if (repo != null) 3 else 1;
+    if (prefix_len + args.len > 16) return error.TooManyArgs;
 
-    try argv.append(allocator, "git");
+    var argv_buf: [16][]const u8 = undefined;
+    argv_buf[0] = "git";
     if (repo) |r| {
-        try argv.append(allocator, "-C");
-        try argv.append(allocator, r);
+        argv_buf[1] = "-C";
+        argv_buf[2] = r;
     }
-    try argv.appendSlice(allocator, args);
+    @memcpy(argv_buf[prefix_len .. prefix_len + args.len], args);
+    const argv = argv_buf[0 .. prefix_len + args.len];
 
     const result = try std.process.Child.run(.{
         .allocator = allocator,
-        .argv = argv.items,
+        .argv = argv,
     });
 
     switch (result.term) {
@@ -147,20 +158,20 @@ fn runGit(allocator: Allocator, repo: ?[]const u8, args: []const []const u8) ![]
 fn collectCommits(
     allocator: Allocator,
     repo: []const u8,
-    since: []const u8,
-    author: []const u8,
+    since_arg: []const u8,
+    author_arg: []const u8,
     commits: *std.ArrayList(Commit),
 ) !void {
-    const since_arg = try std.fmt.allocPrint(allocator, "--since={s}", .{since});
-    const author_arg = try std.fmt.allocPrint(allocator, "--author={s}", .{author});
-
     const output = runGit(allocator, repo, &.{
         "log",
         since_arg,
         author_arg,
         "--pretty=format:%ad|%H|%s",
         "--date=format:%Y-%m-%d %H:%M",
-    }) catch return;
+    }) catch |err| switch (err) {
+        error.CommandFailed => return,
+        else => return err,
+    };
 
     var lines = std.mem.splitScalar(u8, output, '\n');
     while (lines.next()) |line| {
@@ -198,7 +209,12 @@ fn findGitRepos(
 ) !void {
     if (depth > max_depth) return;
 
-    var dir = std.fs.cwd().openDir(base, .{ .iterate = true }) catch return;
+    var dir = std.fs.cwd().openDir(base, .{ .iterate = true }) catch |err| {
+        if (err == error.AccessDenied) {
+            std.debug.print("\xe2\x9a\xa0\xef\xb8\x8f Skipping {s}: permission denied\n", .{base});
+        }
+        return;
+    };
     defer dir.close();
 
     var iter = dir.iterate();
@@ -248,4 +264,3 @@ fn dayOfWeek(y: i32, m: u32, d: u32) usize {
     );
     return @intCast(raw);
 }
-
