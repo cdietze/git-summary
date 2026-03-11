@@ -97,7 +97,6 @@ pub fn main() !void {
 
     var commits: std.ArrayList(Commit) = .empty;
     for (repos.items) |repo| {
-        _ = runGit(arena, repo, &.{ "rev-parse", "HEAD" }) catch continue;
         try collectCommits(arena, repo, since_arg, author_arg, &commits);
     }
 
