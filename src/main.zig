@@ -25,6 +25,7 @@ const params = clap.parseParamsComptime(
     \\-s, --since <str>          Time range for commits [default: 1 week ago]
     \\-a, --author <str>         Author name (default: git config user.name)
     \\-m, --max-depth <usize>    Max search depth [default: 8]
+    \\-e, --exclude <str>...     Directories to exclude from search
     \\<str>
     \\
 );
@@ -50,6 +51,7 @@ pub fn main() !void {
     if (res.args.help != 0) {
         var help_buf: [4096]u8 = undefined;
         var help_w = std.fs.File.stderr().writer(&help_buf);
+        help_w.interface.writeAll("Usage: git-summary [OPTIONS] [DIR]\n\n") catch {};
         clap.help(&help_w.interface, clap.Help, &params, .{}) catch {};
         help_w.interface.flush() catch {};
         return;
@@ -63,6 +65,12 @@ pub fn main() !void {
     const dir = res.positionals[0] orelse ".";
     const since = res.args.since orelse "1 week ago";
     const max_depth = res.args.@"max-depth" orelse 8;
+    var resolved_excludes: std.ArrayList([]const u8) = .empty;
+    for (res.args.exclude) |e| {
+        const trimmed = std.mem.trimRight(u8, e, "/");
+        const resolved = std.fs.cwd().realpathAlloc(arena, trimmed) catch trimmed;
+        try resolved_excludes.append(arena, resolved);
+    }
 
     const out = std.fs.File.stdout();
     var buf: [4096]u8 = undefined;
@@ -79,7 +87,7 @@ pub fn main() !void {
     try out.writeAll(try std.fmt.allocPrint(arena, "\xf0\x9f\x91\xa4 Filtering commits by author: {s}\n", .{author}));
 
     var repos: std.ArrayList([]const u8) = .empty;
-    try findGitRepos(arena, dir, max_depth, 0, &repos);
+    try findGitRepos(arena, dir, max_depth, 0, &repos, resolved_excludes.items);
 
     const count = repos.items.len;
     try out.writeAll(try std.fmt.allocPrint(arena, "\xf0\x9f\x93\xa6 Found {} Git {s}\n", .{
@@ -205,6 +213,7 @@ fn findGitRepos(
     max_depth: usize,
     depth: usize,
     repos: *std.ArrayList([]const u8),
+    extra_excludes: []const []const u8,
 ) !void {
     if (depth > max_depth) return;
 
@@ -226,16 +235,23 @@ fn findGitRepos(
         }
 
         if (entry.name[0] == '.') continue;
-        if (isIgnored(entry.name)) continue;
 
         const sub = try std.fs.path.join(allocator, &.{ base, entry.name });
-        try findGitRepos(allocator, sub, max_depth, depth + 1, repos);
+        if (isIgnored(entry.name, sub, allocator, extra_excludes)) continue;
+        try findGitRepos(allocator, sub, max_depth, depth + 1, repos, extra_excludes);
     }
 }
 
-fn isIgnored(name: []const u8) bool {
+fn isIgnored(name: []const u8, sub_path: []const u8, allocator: Allocator, extra_excludes: []const []const u8) bool {
     for (ignored_dirs) |d| {
         if (std.mem.eql(u8, name, d)) return true;
+    }
+    const resolved = std.fs.cwd().realpathAlloc(allocator, sub_path) catch null;
+    for (extra_excludes) |d| {
+        if (std.mem.eql(u8, name, d)) return true;
+        if (resolved) |r| {
+            if (std.mem.eql(u8, r, d)) return true;
+        }
     }
     return false;
 }

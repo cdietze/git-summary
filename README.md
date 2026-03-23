@@ -56,6 +56,7 @@ git-summary [OPTIONS] [DIR]
 - `-s, --since <SINCE>`: Time range for commits [default: "1 week ago"]
 - `-a, --author <AUTHOR>`: Author name for filtering commits (defaults to git config user.name)
 - `-m, --max-depth <DEPTH>`: Maximum depth for repository search [default: 8]
+- `-e, --exclude <DIR>...`: Directories to exclude from search (name or path, repeatable)
 - `-h, --help`: Print help
 
 ### Examples
