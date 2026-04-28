@@ -22,7 +22,7 @@ Features:
 
 1. Clone the repository:
    ```
-   git clone <repository-url>
+   git clone https://github.com/cdietze/git-summary.git
    cd git-summary
    ```
 
@@ -58,6 +58,7 @@ git-summary [OPTIONS] [DIR]
 - `-m, --max-depth <DEPTH>`: Maximum depth for repository search [default: 8]
 - `-e, --exclude <DIR>...`: Directories to exclude from search (name or path, repeatable)
 - `-h, --help`: Print help
+- `-v, --version`: Print version and exit
 
 ### Examples
 
@@ -79,6 +80,11 @@ git-summary --since "3 days ago" --author "John Doe"
 Limit the search depth to 3 levels:
 ```
 git-summary --max-depth 3
+```
+
+Exclude one or more directories from the search:
+```
+git-summary --exclude vendor --exclude ~/projects/archive
 ```
 
 ## License
