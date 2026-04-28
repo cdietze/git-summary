@@ -18,15 +18,11 @@ There are no tests or linting commands configured.
 
 ## Architecture
 
-Single-file application (`src/main.zig`, ~265 lines) with these sections:
+Single-file application in `src/main.zig`:
 
-- **Argument parsing** (lines 22-65): Uses `zig-clap` with compile-time param definitions. Positional arg for directory, flags for `--since`, `--author`, `--max-depth`.
-- **Directory walking** (`findGitRepos`): Recursively searches for `.git` directories, skipping dotfiles and a hardcoded `ignored_dirs` list (node_modules, build, out, target, dist, coverage, src).
-- **Git interaction** (`runGit`, `collectCommits`): Shells out to `git log` / `git config` via `std.process.Child.run`. Parses `%ad|%H|%s` formatted output.
+- **Argument parsing** (`main`): `zig-clap` with compile-time param definitions. See `README.md` for the user-facing flag list.
+- **Directory walking** (`findGitRepos`): Recursively searches for `.git` directories, skipping dotfiles and a hardcoded `ignored_dirs` list.
+- **Git interaction** (`runGit`, `collectCommits`): Shells out to `git log` / `git config` via `std.process.Child.run`, parses `%ad|%H|%s` output.
 - **Output**: Commits sorted chronologically, grouped by date with weekday names (Tomohiko Sakamoto's algorithm).
 
 Version is sourced from `build.zig.zon` via build options (`@import("config").version`).
-
-## Key Dependencies
-
-- **zig-clap 0.11.0**: Argument parsing library, fetched as a Zig package dependency.
