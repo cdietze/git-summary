@@ -15,7 +15,7 @@ Features:
 ## Installation
 
 ### Prerequisites
-- Rust and Cargo (install from [rustup.rs](https://rustup.rs/))
+- [Zig](https://ziglang.org/download/) (0.15+)
 - Git
 
 ### Building from source
@@ -28,34 +28,36 @@ Features:
 
 2. Build the project:
    ```
-   cargo build --release
+   zig build
    ```
 
 3. Run the project directly (for development):
    ```
-   cargo run -- [OPTIONS]
+   zig build run -- [OPTIONS]
    ```
 
-4. The binary will be available at `target/release/git-summary`
+4. The binary will be available at `zig-out/bin/git-summary`
 
-5. Optionally, install it to your system:
+5. Optionally, install it to a custom prefix:
    ```
-   cargo install --path .
+   zig build -Doptimize=ReleaseFast -p ~/.local
    ```
 
 ## Usage
 
 Basic usage:
 ```
-git-summary [OPTIONS]
+git-summary [OPTIONS] [DIR]
 ```
 
 ### Options
 
-- `--dir <DIR>`: Base directory to search for git repositories [default: .]
-- `--since <SINCE>`: Time range for commits [default: "1 week ago"]
-- `--author <AUTHOR>`: Author name for filtering commits (defaults to git config user.name)
-- `--max-depth <MAX_DEPTH>`: Maximum depth for repository search [default: 8]
+- `[DIR]`: Base directory to search for git repositories [default: .]
+- `-s, --since <SINCE>`: Time range for commits [default: "1 week ago"]
+- `-a, --author <AUTHOR>`: Author name for filtering commits (defaults to git config user.name)
+- `-m, --max-depth <DEPTH>`: Maximum depth for repository search [default: 8]
+- `-e, --exclude <DIR>...`: Directories to exclude from search (name or path, repeatable)
+- `-h, --help`: Print help
 
 ### Examples
 
@@ -66,7 +68,7 @@ git-summary
 
 Show your commits from the last month in a specific directory:
 ```
-git-summary --dir ~/projects --since "1 month ago"
+git-summary --since "1 month ago" ~/projects
 ```
 
 Show commits by a specific author in the last 3 days:
